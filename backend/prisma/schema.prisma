@@ -1,0 +1,416 @@
+// Prisma schema for منصة فرع سيدي الهاني
+// Apply changes with: `npm run db:push` (dev) or `npm run migrate` (prod).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  instructor
+  student
+
+  @@map("user_role")
+}
+
+enum CourseCategory {
+  children
+  women
+  men
+  training
+  summer
+
+  @@map("course_category")
+}
+
+// Pedagogical type of a course. `category` carries the target audience
+// (children/women/men) or the special training/summer tracks; `type`
+// distinguishes تحفيظ وتجويد from فقه وشريعة, which share the same audience.
+enum CourseType {
+  quran
+  fiqh
+  training
+  summer
+
+  @@map("course_type")
+}
+
+enum BoardPosition {
+  president
+  vice_president
+  secretary
+  treasurer
+  member
+
+  @@map("board_position")
+}
+
+enum AgeCategory {
+  under_9
+  age_9_to_15
+  over_15
+
+  @@map("age_category")
+}
+
+enum RegistrationRequestStatus {
+  pending
+  approved
+  rejected
+
+  @@map("registration_request_status")
+}
+
+
+
+
+
+
+// Part 35 — atomic, year-scoped sequence counters ("MEM-2026", "NMEM-2026").
+// Values are only ever produced by a single INSERT ... ON CONFLICT DO UPDATE
+// ... RETURNING statement, so concurrent requests can never collide.
+model IdCounter {
+  key   String @id
+  value Int    @default(0)
+
+  @@map("id_counters")
+}
+
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  username      String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name")
+  role          UserRole
+  // Part 39 — permanent, auto-generated, immutable member number which also
+  // serves as the login username: students get "STU-000001", instructors get
+  // "TCH-000001". Null for admin accounts (they keep a manual username).
+  memberId      String?   @unique @map("member_id")
+  phone         String?
+  birthDate     DateTime? @map("birth_date") @db.Date
+  photoUrl      String?   @map("photo_url")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+
+  enrollments     Enrollment[]
+  attendance      Attendance[]
+  evaluations     Evaluation[]
+  financeEntries  FinanceEntry[]
+  sentMessages    Message[]        @relation("MessagesFrom")
+  receivedMessages Message[]       @relation("MessagesTo")
+  resolvedRegistrationRequests RegistrationRequest[] @relation("ResolvedRegistrationRequests")
+  payments        StudentPayment[]
+  groupsTaught    CourseGroup[]    @relation("GroupInstructor")
+  competitionRegistrations CompetitionRegistration[]
+  // Part 41 — optional board seat of this user (instructor linked to الهيئة التسييرية).
+  boardMembership BoardMember?     @relation("BoardMemberInstructor")
+
+
+  @@map("users")
+}
+
+model Level {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  courseGroups CourseGroup[]
+
+  @@map("levels")
+}
+
+model StudentPayment {
+  id        String   @id @default(uuid()) @db.Uuid
+  studentId String   @map("student_id") @db.Uuid
+  seasonId  Int      @map("season_id")
+  month     Int      // 1..12
+  amount    Decimal? @db.Decimal(12, 3)
+  note      String?
+  paidAt    DateTime @default(now()) @map("paid_at") @db.Timestamptz(6)
+
+  student User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  season  Season @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, seasonId, month])
+  @@index([studentId])
+  @@index([seasonId])
+  @@map("student_payments")
+}
+
+model Season {
+  id                        Int      @id @default(autoincrement())
+  name                      String
+  startsOn                  DateTime @map("starts_on") @db.Date
+  studyStartsOn             DateTime @map("study_starts_on") @db.Date
+  evaluationStartsOn        DateTime @map("evaluation_starts_on") @db.Date
+  finalCompetitionStartsOn  DateTime @map("final_competition_starts_on") @db.Date
+  endsOn                    DateTime @map("ends_on")   @db.Date
+  isActive                  Boolean  @default(false) @map("is_active")
+  courses                   Course[]
+  payments                  StudentPayment[]
+
+  // At most one season may be active at a time. Enforced in Postgres by the
+  // partial unique index created in prisma/sql/2026-07-31-one-active-season.sql:
+  //   CREATE UNIQUE INDEX one_active_season ON seasons (is_active) WHERE is_active = true;
+  // (Prisma's DSL has no partial-index support, so it lives in raw SQL.)
+  // The seasons controller auto-deactivates the previous season in the same
+  // transaction before activating a new one.
+  @@map("seasons")
+}
+
+
+
+model Course {
+  id           String          @id @default(uuid()) @db.Uuid
+  seasonId     Int?            @map("season_id")
+  title        String
+  category     CourseCategory
+  type         CourseType      @default(quran)
+  level        String
+  capacity     Int             @default(25)
+  isPublished  Boolean         @default(true) @map("is_published")
+  startDate    DateTime?       @map("start_date") @db.Date
+  endDate      DateTime?       @map("end_date") @db.Date
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  season       Season?         @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  enrollments  Enrollment[]
+  attendance   Attendance[]
+  evaluations  Evaluation[]
+  groups       CourseGroup[]
+
+  @@map("courses")
+}
+
+model CourseGroup {
+  id           String   @id @default(uuid()) @db.Uuid
+  courseId     String   @map("course_id") @db.Uuid
+  number       Int
+  hizbCount    Int      @default(0) @map("hizb_count")
+  levelId      String?  @map("level_id") @db.Uuid
+  instructorId String?  @map("instructor_id") @db.Uuid
+  room         String?
+  capacity     Int      @default(25)
+  days         Int[]    @default([])
+  timeFrom     String?  @map("time_from")
+  timeTo       String?  @map("time_to")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  course      Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  level       Level?       @relation(fields: [levelId], references: [id], onDelete: SetNull)
+  instructor  User?        @relation("GroupInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  enrollments Enrollment[]
+
+  @@unique([courseId, number])
+  @@index([courseId])
+  @@index([instructorId])
+  @@map("course_groups")
+}
+
+model Enrollment {
+  id         String    @id @default(uuid()) @db.Uuid
+  courseId   String    @map("course_id") @db.Uuid
+  studentId  String    @map("student_id") @db.Uuid
+  groupId    String    @map("group_id") @db.Uuid
+  enrolledAt DateTime  @default(now()) @map("enrolled_at") @db.Timestamptz(6)
+  // Part 29/2 — memorization progress (number of أحزاب completed).
+  hizbCompleted Int    @default(0) @map("hizb_completed")
+
+  course  Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  group   CourseGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memorizationLogs MemorizationLog[]
+
+  @@unique([courseId, studentId])
+  @@index([courseId])
+  @@index([studentId])
+  @@index([groupId])
+  @@map("enrollments")
+}
+
+// Part 29/2 — one row per logged حزب completion, so daily progress can be charted.
+model MemorizationLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  enrollmentId String   @map("enrollment_id") @db.Uuid
+  loggedOn     DateTime @default(now()) @map("logged_on") @db.Date
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([loggedOn])
+  @@map("memorization_logs")
+}
+
+
+model Attendance {
+  id          String   @id @default(uuid()) @db.Uuid
+  courseId    String   @map("course_id") @db.Uuid
+  studentId   String   @map("student_id") @db.Uuid
+  sessionDate DateTime @map("session_date") @db.Date
+  present     Boolean
+  note        String?
+
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId, sessionDate])
+  @@index([courseId, sessionDate])
+  @@map("attendance")
+}
+
+model Evaluation {
+  id           String   @id @default(uuid()) @db.Uuid
+  courseId     String   @map("course_id") @db.Uuid
+  studentId    String   @map("student_id") @db.Uuid
+  label        String
+  score        Decimal  @db.Decimal(5, 2)
+  maxScore     Decimal  @default(20) @map("max_score") @db.Decimal(5, 2)
+  evaluatedAt  DateTime @default(now()) @map("evaluated_at") @db.Date
+
+  course  Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student User   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("evaluations")
+}
+
+model News {
+  id            String   @id @default(uuid()) @db.Uuid
+  title         String
+  excerpt       String
+  body          String
+  tag           String
+  dateGregorian String   @map("date_gregorian")
+  dateHijri     String   @map("date_hijri")
+  // Part 29/3 — real sortable date (display strings above stay as-is).
+  eventDate     DateTime? @map("event_date") @db.Date
+  publishedAt   DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+
+  @@index([publishedAt(sort: Desc)])
+  @@map("news")
+}
+
+model Competition {
+  id           String @id @default(uuid()) @db.Uuid
+  name         String
+  level        String
+  year         Int
+  participants Int    @default(0)
+  passed       Int    @default(0)
+  topThree     Json   @default("[]") @map("top_three")
+  // Part 29/3 — real date + place for the upcoming-activities widget.
+  eventDate    DateTime? @map("event_date") @db.Date
+  location     String?
+
+  // Part 33 — participation registrations / join requests.
+  registrations CompetitionRegistration[]
+
+  @@map("competitions")
+}
+
+// Part 33 — one row per participant registered in a competition (internal
+// student or external person), with a one-time exportable receipt.
+model CompetitionRegistration {
+  id              String    @id @default(uuid()) @db.Uuid
+  competitionId   String    @map("competition_id") @db.Uuid
+  studentId       String?   @map("student_id") @db.Uuid
+  // Part 36 — auto-generated, immutable code ("N-MEM-2026-000001") issued ONLY
+  // for external participants; internal students reuse their own memberId.
+  registrationCode String?  @unique @map("registration_code")
+  externalName    String?   @map("external_name")
+  externalPhone   String?   @map("external_phone")
+  amountPaid      Decimal?  @db.Decimal(10, 3) @map("amount_paid")
+
+  registeredAt    DateTime  @default(now()) @map("registered_at") @db.Timestamptz(6)
+  receiptIssued   Boolean   @default(false) @map("receipt_issued")
+  receiptIssuedAt DateTime? @map("receipt_issued_at") @db.Timestamptz(6)
+
+  competition Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  student     User?       @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([competitionId])
+  @@map("competition_registrations")
+}
+
+
+model Gallery {
+  id    String @id @default(uuid()) @db.Uuid
+  title String
+  date  String
+  url   String
+
+  @@map("gallery")
+}
+
+model BoardMember {
+  id String @id @default(uuid()) @db.Uuid
+  // Part 41 — frozen auto-generated board number: MEM-000001.
+  memberId String @unique @map("member_id")
+  // Part 41 — when set, identity (name/phone/birthDate/photo) lives on the
+  // linked User (instructor) and the local columns stay null.
+  instructorId String?       @unique @map("instructor_id") @db.Uuid
+  fullName     String?       @map("full_name")
+  birthDate    DateTime?     @map("birth_date") @db.Date
+  phone        String?
+  position     BoardPosition
+  photoUrl     String?       @map("photo_url")
+  orderIndex   Int           @default(0) @map("order_index")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  instructor User? @relation("BoardMemberInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+
+  @@index([orderIndex])
+  @@map("board_members")
+}
+
+
+model FinanceEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  kind        String
+  category    String
+  amount      Decimal  @db.Decimal(12, 3)
+  description String?
+  entryDate   DateTime @default(now()) @map("entry_date") @db.Date
+  createdById String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy User? @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@map("finance_entries")
+}
+
+model Message {
+  id         String    @id @default(uuid()) @db.Uuid
+  fromUserId String    @map("from_user") @db.Uuid
+  toUserId   String    @map("to_user")   @db.Uuid
+  body       String
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  readAt     DateTime? @map("read_at") @db.Timestamptz(6)
+
+  fromUser User @relation("MessagesFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User @relation("MessagesTo",   fields: [toUserId],   references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model RegistrationRequest {
+  id           String                     @id @default(uuid()) @db.Uuid
+  fullName     String                     @map("full_name")
+  ageCategory  AgeCategory                @map("age_category")
+  phone        String
+  status       RegistrationRequestStatus  @default(pending)
+  createdAt    DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  resolvedAt   DateTime?                  @map("resolved_at") @db.Timestamptz(6)
+  resolvedById String?                    @map("resolved_by") @db.Uuid
+
+  resolvedBy User? @relation("ResolvedRegistrationRequests", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("registration_requests")
+}
