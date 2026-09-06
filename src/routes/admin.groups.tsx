@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { Plus, X, Pencil, Trash2, Users2, ArrowLeft, Printer, Layers, GraduationCap, CheckCircle2, BookOpen, User, Clock, CalendarDays } from "lucide-react";
+import { Plus, X, Pencil, Trash2, Users2, ArrowLeft, Printer, Layers, GraduationCap, CheckCircle2, BookOpen, User, Clock, CalendarDays, Save, Info, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import { confirmToast } from "@/lib/confirm-toast";
 import {
@@ -11,10 +11,10 @@ import {
   type StudentGroup,
   type GroupStudent,
 } from "@/lib/levels-groups-store";
-import { usePeopleStore, isMemorizationCourse, WEEKDAYS, AUDIENCE_LABEL } from "@/lib/people-store";
+import { usePeopleStore, isMemorizationCourse, WEEKDAYS, AUDIENCE_LABEL, TYPE_LABEL, type CourseType } from "@/lib/people-store";
 import { PrintSheet, PrintSectionTitle, PrintTable, PrintTd } from "@/components/admin/print-sheet";
 import { TimeInput24 } from "@/components/ui/time-input-24";
-import { StatCard } from "@/components/admin/admin-list-kit";
+import { StatCard, Pagination, usePagination } from "@/components/admin/admin-list-kit";
 
 export const Route = createFileRoute("/admin/groups")({
   head: () => ({
@@ -170,27 +170,83 @@ function LevelsList({ levels, onAdd, onEdit }: { levels: Level[]; onAdd: () => v
 
 function LevelFormDialog({ editing, onClose }: { editing: Level | null; onClose: () => void }) {
   const [name, setName] = useState(editing?.name ?? "");
+  const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
+    setSaving(true);
     try {
       if (editing) { await levelsActions.update(editing.id, { name }); toast.success("تم حفظ التغييرات"); }
       else { await levelsActions.add({ name }); toast.success("تم إنشاء المستوى"); }
       onClose();
-    } catch {}
+    } catch {
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <Modal title={editing ? "تعديل المستوى" : "مستوى جديد"} onClose={onClose}>
-      <form onSubmit={submit} className="grid gap-3">
-        <Field label="اسم المستوى">
-          <input required value={name} onChange={(e) => setName(e.target.value)} className={inputClass} placeholder="مثال: المستوى الأول" />
-        </Field>
-        <button type="submit" className="mt-2 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
-          {editing ? "حفظ" : "إنشاء"}
-        </button>
-      </form>
-    </Modal>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Layers className="h-5 w-5" />
+            </span>
+            <h2 className="font-display text-xl font-bold">
+              {editing ? "تعديل المستوى" : "مستوى جديد"}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            aria-label="إغلاق"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {editing
+            ? "عدّل اسم المستوى ثم احفظ التغييرات."
+            : "أدخل اسم المستوى لإضافته إلى النظام."}
+        </p>
+
+        <form onSubmit={submit} className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4">
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              اسم المستوى <span className="text-destructive">*</span>
+            </label>
+            <input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="مثال: المستوى الأول"
+              className="block w-full max-w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            />
+          </div>
+
+          <div className="mt-1 flex flex-wrap gap-3 border-t border-border pt-4">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+            >
+              <Save className="h-4 w-4" />
+              {editing ? "حفظ التغييرات" : "إنشاء المستوى"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-border bg-background px-8 py-3 text-sm font-semibold text-foreground hover:bg-secondary"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -200,6 +256,29 @@ function GroupsList({
 }: {
   groups: StudentGroup[]; levels: Level[]; onAdd: () => void; onEdit: (g: StudentGroup) => void; onOpen: (g: StudentGroup) => void;
 }) {
+  const { courses } = usePeopleStore();
+  const [typeFilter, setTypeFilter] = useState<CourseType | "all">("all");
+
+  const typeById = useMemo(() => {
+    const m = new Map<string, CourseType>();
+    courses.forEach((c) => m.set(String(c.id), (c.type ?? "quran") as CourseType));
+    return m;
+  }, [courses]);
+
+  const filtered = useMemo(
+    () =>
+      typeFilter === "all"
+        ? groups
+        : groups.filter((g) => typeById.get(String(g.courseId)) === typeFilter),
+    [groups, typeFilter, typeById],
+  );
+
+  const pg = usePagination(filtered, 8);
+  const { setPage } = pg;
+  useEffect(() => {
+    setPage(1);
+  }, [typeFilter, setPage]);
+
   function remove(g: StudentGroup) {
     confirmToast({
       message: `حذف المجموعة رقم "${g.number}"؟`,
@@ -211,13 +290,27 @@ function GroupsList({
   }
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+        <TabBtn active={typeFilter === "all"} onClick={() => setTypeFilter("all")}>الكل</TabBtn>
+        {(Object.keys(TYPE_LABEL) as CourseType[]).map((t) => (
+          <TabBtn key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)}>
+            {TYPE_LABEL[t]}
+          </TabBtn>
+        ))}
+      </div>
+
       {groups.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
           لا توجد مجموعات بعد. {levels.length === 0 ? "أنشئ مستوىً أولاً قبل إضافة المجموعات." : "اضغط «مجموعة جديدة» للبدء."}
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
+          لا توجد مجموعات مطابقة لهذا النوع من الدورات.
+        </div>
       ) : (
         <div className="space-y-4">
-          {groups.map((g) => {
+          {pg.slice.map((g) => {
+
             const pct = g.capacity > 0 ? Math.min(100, Math.round((g.studentsCount / g.capacity) * 100)) : 0;
             return (
               <article key={g.id} className="rounded-2xl border border-border bg-card p-5 shadow-soft">
@@ -278,9 +371,19 @@ function GroupsList({
               </article>
             );
           })}
+          <Pagination
+            page={pg.page}
+            pageCount={pg.pageCount}
+            from={pg.from}
+            to={pg.to}
+            total={pg.total}
+            noun="مجموعة"
+            onPage={pg.setPage}
+          />
         </div>
       )}
     </div>
+
   );
 }
 
@@ -358,84 +461,228 @@ function GroupFormDialog({ editing, levels, groups, onClose }: { editing: Studen
     } catch {}
   }
   return (
-    <Modal title={editing ? "تعديل المجموعة" : "مجموعة جديدة"} onClose={onClose}>
-      <form onSubmit={submit} className="grid gap-3">
-        <Field label="الدورة">
-          <select required value={courseId} onChange={(e) => changeCourse(e.target.value)} className={inputClass}>
-            <option value="" disabled>اختر الدورة</option>
-            {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
-          </select>
-        </Field>
-        <Field label="رقم المجموعة">
-          <input type="number" min={1} required value={number} onChange={(e) => setNumber(Number(e.target.value))} className={inputClass} placeholder="مثال: 1" />
-        </Field>
-        <Field label="المستوى (اختياري)">
-          <select value={levelId} onChange={(e) => setLevelId(e.target.value)} className={inputClass}>
-            <option value="">— بدون مستوى —</option>
-            {levels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </Field>
-        {showHizb ? (
-          <Field label="عدد الأحزاب">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
+      <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Users2 className="h-5 w-5" />
+            </span>
+            <h2 className="font-display text-xl font-bold">
+              {editing ? "تعديل المجموعة" : "مجموعة جديدة"}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+            aria-label="إغلاق"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {editing
+            ? "عدّل معلومات المجموعة ثم احفظ التغييرات."
+            : "أدخل معلومات المجموعة لإضافتها إلى النظام."}
+        </p>
+
+        <form onSubmit={submit} className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+          {/* الدورة */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              الدورة <span className="text-destructive">*</span>
+            </label>
+            <select
+              required
+              value={courseId}
+              onChange={(e) => changeCourse(e.target.value)}
+              className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            >
+              <option value="" disabled>اختر الدورة</option>
+              {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+            </select>
+          </div>
+
+          {/* رقم المجموعة */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              رقم المجموعة <span className="text-destructive">*</span>
+            </label>
             <input
               type="number"
-              min={0}
-              max={60}
-              value={hizbCount}
-              onChange={(e) => setHizbCount(Number(e.target.value))}
-              className={inputClass}
+              min={1}
+              required
+              value={number}
+              onChange={(e) => setNumber(Number(e.target.value))}
+              placeholder="مثال: 1"
+              className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
             />
-          </Field>
-        ) : (
-          selectedCourse && (
-            <div className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-              عدد الأحزاب لا ينطبق على هذا النوع من الدورات (فقه وشريعة / تكوين معلمين / دورات صيفية).
-            </div>
-          )
-        )}
-        <Field label="المعلم (اختياري)">
-          <select value={instructorId} onChange={(e) => setInstructorId(e.target.value)} className={inputClass}>
-            <option value="">— بدون معلم —</option>
-            {instructors.map((p) => <option key={p.id} value={p.id}>{p.fullName}</option>)}
-          </select>
-        </Field>
-        <Field label="الطاقة الاستيعابية">
-          <input type="number" min={1} required value={capacity} onChange={(e) => setCapacity(Number(e.target.value))} className={inputClass} />
-        </Field>
-        <Field label="القاعة (اختياري)">
-          <input value={room} onChange={(e) => setRoom(e.target.value)} className={inputClass} placeholder="مثال: قاعة 2" />
-        </Field>
-        <Field label="أيام الحصص">
-          <div className="flex flex-wrap gap-1.5">
-            {WEEKDAYS.map((w) => (
-              <button
-                key={w.value}
-                type="button"
-                onClick={() => toggleDay(w.value)}
-                className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${
-                  days.includes(w.value)
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background text-foreground hover:bg-secondary"
-                }`}
-              >
-                {w.label}
-              </button>
-            ))}
           </div>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="من الساعة">
-            <TimeInput24 value={timeFrom} onChange={setTimeFrom} />
-          </Field>
-          <Field label="إلى الساعة">
-            <TimeInput24 value={timeTo} onChange={setTimeTo} />
-          </Field>
-        </div>
-        <button type="submit" className="mt-2 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90">
-          {editing ? "حفظ" : "إنشاء"}
-        </button>
-      </form>
-    </Modal>
+
+          {/* المستوى */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              المستوى <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={levelId}
+              onChange={(e) => setLevelId(e.target.value)}
+              className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            >
+              <option value="">— بدون مستوى —</option>
+              {levels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+
+          {/* المعلم */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              المعلم <span className="text-destructive">*</span>
+            </label>
+            <select
+              value={instructorId}
+              onChange={(e) => setInstructorId(e.target.value)}
+              className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            >
+              <option value="">— بدون معلم —</option>
+              {instructors.map((p) => <option key={p.id} value={p.id}>{p.fullName}</option>)}
+            </select>
+          </div>
+
+          {/* عدد الأحزاب / ملاحظة إرشادية */}
+          {showHizb ? (
+            <div className="min-w-0">
+              <label className="mb-1.5 block text-sm font-semibold">
+                عدد الأحزاب <span className="text-destructive">*</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                max={60}
+                value={hizbCount}
+                onChange={(e) => setHizbCount(Number(e.target.value))}
+                className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+              />
+            </div>
+          ) : (
+            selectedCourse && (
+              <div className="min-w-0 flex items-end">
+                <div className="flex w-full items-start gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-3 text-xs text-muted-foreground">
+                  <Info className="h-4 w-4 shrink-0 text-primary" />
+                  <span>عدد الأحزاب لا ينطبق على هذا النوع من الدورات (فقه وشريعة / تكوين معلمين / دورات صيفية).</span>
+                </div>
+              </div>
+            )
+          )}
+
+          {/* الطاقة الاستيعابية */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              الطاقة الاستيعابية <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              required
+              value={capacity}
+              onChange={(e) => setCapacity(Number(e.target.value))}
+              className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+            />
+          </div>
+
+          {/* القاعة */}
+          <div className="min-w-0">
+            <label className="mb-1.5 block text-sm font-semibold">
+              القاعة <span className="text-destructive">*</span>
+            </label>
+            <div className="relative">
+              <MapPin className="pointer-events-none absolute inset-y-0 left-3 my-auto h-4 w-4 text-muted-foreground" />
+              <input
+                value={room}
+                onChange={(e) => setRoom(e.target.value)}
+                placeholder="مثال: قاعة 2"
+                className="block w-full rounded-xl border border-input bg-background py-3 pr-3 pl-9 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
+              />
+            </div>
+          </div>
+
+          {/* التوقيت: من - إلى الساعة */}
+          <div className="min-w-0 sm:col-span-2">
+            <label className="mb-1.5 block text-sm font-semibold">
+              التوقيت (من - إلى الساعة) <span className="text-destructive">*</span>
+            </label>
+            <div className="flex items-end gap-3">
+              <div className="min-w-0 flex-1">
+                <span className="mb-1 block text-xs text-muted-foreground">من الساعة</span>
+                <TimeInput24 value={timeFrom} onChange={setTimeFrom} />
+              </div>
+              <span className="pb-3 text-lg font-bold text-muted-foreground">–</span>
+              <div className="min-w-0 flex-1">
+                <span className="mb-1 block text-xs text-muted-foreground">إلى الساعة</span>
+                <TimeInput24 value={timeTo} onChange={setTimeTo} />
+              </div>
+            </div>
+          </div>
+
+          {/* أيام الحصص */}
+          <div className="min-w-0 sm:col-span-2">
+            <label className="mb-1.5 block text-sm font-semibold">
+              أيام الحصص <span className="text-destructive">*</span>
+            </label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+              {WEEKDAYS.map((w) => {
+                const on = days.includes(w.value);
+                return (
+                  <button
+                    key={w.value}
+                    type="button"
+                    onClick={() => toggleDay(w.value)}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-colors ${
+                      on
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-foreground hover:bg-secondary"
+                    }`}
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    <span className="text-xs font-semibold">{w.label}</span>
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded ${
+                        on ? "bg-primary text-primary-foreground" : "border border-border"
+                      }`}
+                    >
+                      {on && <CheckCircle2 className="h-3 w-3" />}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex items-start gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
+              <Info className="h-4 w-4 shrink-0 text-primary" />
+              <span>يمكنك اختيار يوم واحد أو أكثر حسب أيام الحصص الخاصة بالمجموعة.</span>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="mt-1 flex flex-wrap gap-3 border-t border-border pt-4 sm:col-span-2">
+            <button
+              type="submit"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90"
+            >
+              <Save className="h-4 w-4" />
+              {editing ? "حفظ التغييرات" : "إنشاء المجموعة"}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-border bg-background px-8 py-3 text-sm font-semibold text-foreground hover:bg-secondary"
+            >
+              إلغاء
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -696,25 +943,3 @@ function PrintGroupRoster({
 const inputClass =
   "block w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block text-sm font-semibold">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-4 py-8">
-      <div className={`max-h-full w-full ${wide ? "max-w-2xl" : "max-w-md"} overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-elevated`}>
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold">{title}</h2>
-          <button onClick={onClose} className="rounded-md p-1 hover:bg-secondary"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="mt-4">{children}</div>
-      </div>
-    </div>
-  );
-}

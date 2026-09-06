@@ -91,20 +91,25 @@ publicRouter.get("/news", async (_req, res, next) => {
 });
 
 // GET /api/public/competitions
+const isoDay = (d) => (d ? d.toISOString().slice(0, 10) : null);
+
 publicRouter.get("/competitions", async (_req, res, next) => {
   try {
     const rows = await prisma.competition.findMany({
-      orderBy: [{ year: "desc" }, { name: "asc" }],
+      orderBy: [{ eventDate: "desc" }, { year: "desc" }, { name: "asc" }],
     });
     res.json(
       rows.map((c) => ({
         ...c,
+        eventDate: isoDay(c.eventDate),
+        deadline: isoDay(c.deadline),
         passRate:
           c.participants > 0 ? Math.round((c.passed / c.participants) * 100) : 0,
       }))
     );
   } catch (e) { next(e); }
 });
+
 
 // GET /api/public/gallery
 publicRouter.get("/gallery", async (_req, res, next) => {

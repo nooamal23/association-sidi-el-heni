@@ -308,6 +308,13 @@ model Competition {
   eventDate    DateTime? @map("event_date") @db.Date
   location     String?
 
+  // Part 45 — announcement fields (were browser-only before).
+  field       String?   // tajwid | hifz | hifz_tajwid | fiqh | sharia
+  hizbCount   Int?      @map("hizb_count")
+  description String?
+  deadline    DateTime? @db.Date
+  imageUrl    String?   @map("image_url")
+
   // Part 33 — participation registrations / join requests.
   registrations CompetitionRegistration[]
 

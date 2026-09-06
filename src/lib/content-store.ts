@@ -23,7 +23,29 @@ export type Competition = {
   /** Part 29/3 — real date (yyyy-MM-dd) + place of the competition. */
   eventDate?: string | null;
   location?: string | null;
+  /** Part 45 — announcement fields, persisted in the database. */
+  field?: CompetitionField | null;
+  hizbCount?: number | null;
+  description?: string | null;
+  deadline?: string | null;
+  imageUrl?: string | null;
 };
+
+/** مجال المسابقة */
+export type CompetitionField = "tajwid" | "hifz" | "hifz_tajwid" | "fiqh" | "sharia";
+
+export const FIELD_LABEL: Record<CompetitionField, string> = {
+  tajwid: "التجويد",
+  hifz: "الحفظ",
+  hifz_tajwid: "الحفظ والتجويد",
+  fiqh: "الفقه",
+  sharia: "الشريعة",
+};
+
+/** Only these fields ask for "عدد الأحزاب المقررة". */
+export function needsHizb(f?: CompetitionField | null): boolean {
+  return f === "hifz" || f === "hifz_tajwid";
+}
 
 export type GalleryEntry = {
   id: string;
@@ -43,15 +65,13 @@ export type CompetitionAnnouncement = {
   location: string;
   description: string;
   imageUrl?: string;
+  field?: CompetitionField | null;
+  hizbCount?: number | null;
 };
-
-/** Local-only presentation fields for a competition (no backend column yet). */
-type Extra = { description?: string; deadline?: string; imageUrl?: string };
 
 type Persisted = {
   competitions: Competition[];
   gallery: GalleryEntry[];
-  extras: Record<string, Extra>;
 };
 
 type State = Persisted & {
@@ -59,30 +79,31 @@ type State = Persisted & {
   announcements: CompetitionAnnouncement[];
 };
 
-const KEY = "sh_content_store_v3";
-const EMPTY: Persisted = { competitions: [], gallery: [], extras: {} };
+const KEY = "sh_content_store_v4";
+const EMPTY: Persisted = { competitions: [], gallery: [] };
 
 /** A competition has results once numbers or a podium were entered. */
 export function hasResults(c: Competition): boolean {
   return (c.participants ?? 0) > 0 || (c.passed ?? 0) > 0 || (c.topThree?.length ?? 0) > 0;
 }
 
-function toAnnouncement(c: Competition, extras: Record<string, Extra>): CompetitionAnnouncement {
-  const e = extras[c.id] ?? {};
+function toAnnouncement(c: Competition): CompetitionAnnouncement {
   return {
     id: c.id,
     title: c.name,
     level: c.level as CompetitionAnnouncement["level"],
     date: c.eventDate ?? "",
-    deadline: e.deadline || undefined,
+    deadline: c.deadline || undefined,
     location: c.location ?? "",
-    description: e.description ?? "",
-    imageUrl: e.imageUrl || undefined,
+    description: c.description ?? "",
+    imageUrl: c.imageUrl || undefined,
+    field: c.field ?? null,
+    hizbCount: c.hizbCount ?? null,
   };
 }
 
 function derive(p: Persisted): State {
-  return { ...p, announcements: p.competitions.map((c) => toAnnouncement(c, p.extras)) };
+  return { ...p, announcements: p.competitions.map(toAnnouncement) };
 }
 
 function loadCache(): State {
@@ -94,7 +115,6 @@ function loadCache(): State {
     return derive({
       competitions: parsed.competitions ?? [],
       gallery: parsed.gallery ?? [],
-      extras: parsed.extras ?? {},
     });
   } catch {
     return derive(EMPTY);
@@ -110,7 +130,7 @@ function setState(next: Persisted) {
     try {
       window.localStorage.setItem(
         KEY,
-        JSON.stringify({ competitions: state.competitions, gallery: state.gallery, extras: state.extras }),
+        JSON.stringify({ competitions: state.competitions, gallery: state.gallery }),
       );
     } catch {}
   }
@@ -154,6 +174,11 @@ export async function ensureContentLoaded(force = false): Promise<void> {
             topThree: Array.isArray(c.topThree) ? c.topThree : [],
             eventDate: c.eventDate ? String(c.eventDate).slice(0, 10) : null,
             location: c.location ?? null,
+            field: c.field ?? null,
+            hizbCount: c.hizbCount ?? null,
+            description: c.description ?? null,
+            deadline: c.deadline ? String(c.deadline).slice(0, 10) : null,
+            imageUrl: c.imageUrl ?? null,
           })),
           gallery: gal.map((g) => ({
             id: g.id,
@@ -197,6 +222,11 @@ export const competitionsActions = {
           topThree: c.topThree ?? [],
           eventDate: c.eventDate || null,
           location: c.location || null,
+          field: c.field || null,
+          hizbCount: c.hizbCount ?? null,
+          description: c.description || null,
+          deadline: c.deadline || null,
+          imageUrl: c.imageUrl || null,
         }),
       });
       id = created?.id ?? "";
@@ -211,7 +241,7 @@ export const competitionsActions = {
     }
     try {
       const body: Record<string, unknown> = {};
-      for (const k of ["name", "level", "year", "participants", "passed", "topThree", "eventDate", "location"] as const) {
+      for (const k of ["name", "level", "year", "participants", "passed", "topThree", "eventDate", "location", "field", "hizbCount", "description", "deadline", "imageUrl"] as const) {
         if (patch[k] !== undefined) body[k] = patch[k];
       }
       await apiFetch(`/api/admin/competitions/${id}`, { method: "PUT", body: JSON.stringify(body) });
@@ -280,7 +310,7 @@ function yearOf(date: string): number {
 // imageUrl live locally until the backend gains those columns.
 export const announcementsActions = {
   async add(a: Omit<CompetitionAnnouncement, "id">) {
-    const id = await competitionsActions.add({
+    await competitionsActions.add({
       name: a.title,
       level: a.level,
       year: yearOf(a.date),
@@ -289,40 +319,28 @@ export const announcementsActions = {
       topThree: [],
       eventDate: a.date || null,
       location: a.location || null,
-    });
-    if (!id) return;
-    setState({
-      ...state,
-      extras: {
-        ...state.extras,
-        [id]: { description: a.description, deadline: a.deadline, imageUrl: a.imageUrl },
-      },
+      field: a.field ?? null,
+      hizbCount: needsHizb(a.field) ? (a.hizbCount ?? null) : null,
+      description: a.description || null,
+      deadline: a.deadline || null,
+      imageUrl: a.imageUrl || null,
     });
   },
   async update(id: string, patch: Partial<Omit<CompetitionAnnouncement, "id">>) {
-    const compPatch: Partial<Omit<Competition, "id">> = {};
-    if (patch.title !== undefined) compPatch.name = patch.title;
-    if (patch.level !== undefined) compPatch.level = patch.level;
-    if (patch.location !== undefined) compPatch.location = patch.location;
-    if (patch.date !== undefined) { compPatch.eventDate = patch.date || null; compPatch.year = yearOf(patch.date); }
-    if (Object.keys(compPatch).length) await competitionsActions.update(id, compPatch);
-    setState({
-      ...state,
-      extras: {
-        ...state.extras,
-        [id]: {
-          ...(state.extras[id] ?? {}),
-          ...(patch.description !== undefined ? { description: patch.description } : {}),
-          ...(patch.deadline !== undefined ? { deadline: patch.deadline } : {}),
-          ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
-        },
-      },
-    });
+    const p: Partial<Omit<Competition, "id">> = {};
+    if (patch.title !== undefined) p.name = patch.title;
+    if (patch.level !== undefined) p.level = patch.level;
+    if (patch.location !== undefined) p.location = patch.location;
+    if (patch.date !== undefined) { p.eventDate = patch.date || null; p.year = yearOf(patch.date); }
+    if (patch.field !== undefined) p.field = patch.field ?? null;
+    if (patch.hizbCount !== undefined) p.hizbCount = patch.hizbCount ?? null;
+    if (patch.field !== undefined && !needsHizb(patch.field)) p.hizbCount = null;
+    if (patch.description !== undefined) p.description = patch.description || null;
+    if (patch.deadline !== undefined) p.deadline = patch.deadline || null;
+    if (patch.imageUrl !== undefined) p.imageUrl = patch.imageUrl || null;
+    if (Object.keys(p).length) await competitionsActions.update(id, p);
   },
   async remove(id: string) {
     await competitionsActions.remove(id);
-    const extras = { ...state.extras };
-    delete extras[id];
-    setState({ ...state, extras });
   },
 };

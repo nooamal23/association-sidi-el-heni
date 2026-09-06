@@ -145,20 +145,20 @@ export function CompetitionRegistrationsPanel() {
       {/* --- Registrations table --- */}
       {selected && (
         <section className="rounded-2xl border border-border bg-card shadow-soft">
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5">
-            <div>
-              <h2 className="font-display text-lg font-bold">{selected.title}</h2>
+          <header className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-5">
+            <div className="min-w-0">
+              <h2 className="truncate font-display text-base font-bold sm:text-lg">{selected.title}</h2>
               <p className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1"><Globe className="h-3.5 w-3.5" /> {selected.level}</span>
-                <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> {selected.date || "—"}</span>
-                <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" /> {selected.location || "—"}</span>
-                <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> عدد المسجّلين: {registrations.length}</span>
+                <span className="flex items-center gap-1"><Globe className="h-3.5 w-3.5 shrink-0" /> {selected.level}</span>
+                <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 shrink-0" /> {selected.date || "—"}</span>
+                <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5 shrink-0" /> {selected.location || "—"}</span>
+                <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5 shrink-0" /> عدد المسجّلين: {registrations.length}</span>
               </p>
             </div>
             <button
               onClick={() => setAdding(true)}
               disabled={!resolvedId}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 sm:w-auto"
             >
               <UserPlus className="h-4 w-4" /> {w.addLabel}
             </button>
@@ -167,7 +167,77 @@ export function CompetitionRegistrationsPanel() {
           {registrations.length === 0 ? (
             <p className="p-6 text-center text-sm text-muted-foreground">لا توجد تسجيلات بعد.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* بطاقات للهاتف */}
+            <div className="space-y-3 p-4 md:hidden">
+              {registrations.map((r) => (
+                <div key={r.id} className="rounded-2xl border border-border bg-background p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold">{r.fullName}</div>
+                      <div className="mt-1 font-mono text-xs text-muted-foreground">
+                        {r.displayId ?? r.memberId ?? r.registrationCode ?? "—"}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      r.external ? "bg-amber-500/15 text-amber-700 dark:text-amber-400" : "bg-primary/10 text-primary"
+                    }`}>
+                      {r.external ? "من خارج الجمعية" : "تابع للجمعية"}
+                    </span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground">رقم الهاتف</dt>
+                      <dd className="truncate font-semibold">{r.phone || "—"}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground">{w.dateLabel}</dt>
+                      <dd className="truncate font-semibold">{fmtDate(r.registeredAt)}</dd>
+                    </div>
+                    <div className="min-w-0">
+                      <dt className="text-muted-foreground">الثمن المدفوع</dt>
+                      <dd className="truncate font-semibold">{fmtAmount(r.amountPaid)}</dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3 flex gap-2 border-t border-border pt-3">
+                    <button
+                      onClick={() => setReceiptFor(r)}
+                      disabled={r.receiptIssued}
+                      className={`flex flex-1 items-center justify-center gap-2 rounded-lg border p-2 text-xs font-semibold ${
+                        r.receiptIssued
+                          ? "cursor-not-allowed border-border bg-secondary text-muted-foreground opacity-50"
+                          : "border-border hover:bg-secondary"
+                      }`}
+                    >
+                      <Printer className="h-4 w-4" /> التوصيل
+                    </button>
+                    <button
+                      onClick={() =>
+                        confirmToast({
+                          message: "إلغاء المشاركة؟",
+                          description: `سيتم حذف تسجيل «${r.fullName}» من مسابقة «${selected.title}».`,
+                          confirmLabel: "إلغاء المشاركة",
+                          variant: "danger",
+                          onConfirm: () => {
+                            if (!resolvedId) return;
+                            registrationsActions
+                              .remove(resolvedId, r.id)
+                              .then(() => toast.success("تم إلغاء المشاركة"))
+                              .catch((e) => toast.error(`تعذّر الحذف: ${(e as Error).message}`));
+                          },
+                        })
+                      }
+                      className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border p-2 text-xs font-semibold text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-4 w-4" /> إلغاء
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
+
               <table className="w-full text-sm">
                 <thead className="bg-secondary/60 text-xs">
                   <tr>
@@ -242,7 +312,9 @@ export function CompetitionRegistrationsPanel() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
+
         </section>
       )}
 
@@ -281,15 +353,22 @@ function AddRegistrationDialog({
   const { query, setQuery, filtered } = useLiveSearch<Person>(students, [(p) => p.fullName, (p) => p.phone]);
 
   const [kind, setKind] = useState<"internal" | "external">("internal");
-  const [student, setStudent] = useState<Person | null>(null);
+  // اختيار متعدّد: يمكن تسجيل عدة تلاميذ دفعة واحدة.
+  const [selected, setSelected] = useState<Person[]>([]);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [amount, setAmount] = useState("");
   const [saving, setSaving] = useState(false);
   const w = wording(competition.level);
 
+  function toggleStudent(p: Person) {
+    setSelected((prev) =>
+      prev.some((s) => s.id === p.id) ? prev.filter((s) => s.id !== p.id) : [...prev, p],
+    );
+  }
+
   async function save() {
-    if (kind === "internal" && !student) { toast.error("اختر تلميذاً من القائمة."); return; }
+    if (kind === "internal" && selected.length === 0) { toast.error("اختر تلميذاً واحداً على الأقل."); return; }
     if (kind === "external" && (!name.trim() || !phone.trim())) {
       toast.error("أدخل الاسم واللقب ورقم الهاتف."); return;
     }
@@ -298,25 +377,52 @@ function AddRegistrationDialog({
     }
     setSaving(true);
     try {
-      await registrationsActions.add(competition.id, {
-        studentId: kind === "internal" ? student!.id : null,
-        memberId: kind === "internal" ? student!.memberId ?? student!.username ?? null : null,
-        fullName: kind === "internal" ? student!.fullName : name.trim(),
-        phone: kind === "internal" ? student!.phone : phone.trim(),
-        externalName: kind === "external" ? name.trim() : null,
-        externalPhone: kind === "external" ? phone.trim() : null,
-        amountPaid: amount.trim() === "" ? null : Number(amount),
-      });
-      toast.success("تم التسجيل بنجاح");
+      if (kind === "internal") {
+        const failed: string[] = [];
+        // تسجيل متتابع حتى لا تتداخل عمليات التحديث.
+        for (const s of selected) {
+          try {
+            await registrationsActions.add(competition.id, {
+              studentId: s.id,
+              memberId: s.memberId ?? s.username ?? null,
+              fullName: s.fullName,
+              phone: s.phone,
+              externalName: null,
+              externalPhone: null,
+              amountPaid: Number(amount),
+            });
+          } catch {
+            failed.push(s.fullName);
+          }
+        }
+        if (failed.length) {
+          toast.error(`تعذّر تسجيل: ${failed.join("، ")}`);
+          if (failed.length === selected.length) return;
+        }
+        toast.success(`تم تسجيل ${selected.length - failed.length} مشارك`);
+      } else {
+        await registrationsActions.add(competition.id, {
+          studentId: null,
+          memberId: null,
+          fullName: name.trim(),
+          phone: phone.trim(),
+          externalName: name.trim(),
+          externalPhone: phone.trim(),
+          amountPaid: Number(amount),
+        });
+        toast.success("تم التسجيل بنجاح");
+      }
       onClose();
     } catch (e) {
       toast.error(`تعذّر التسجيل: ${(e as Error).message}`);
     } finally { setSaving(false); }
   }
 
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/40 px-4 py-8">
-      <div className="max-h-full w-full max-w-4xl overflow-y-auto rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
+      <div className="w-full max-w-4xl rounded-3xl border border-border bg-card p-4 shadow-elevated sm:p-7">
+
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -361,11 +467,12 @@ function AddRegistrationDialog({
                   <div className="text-xs text-muted-foreground">نتائج البحث ({filtered.length})</div>
                   <div className="max-h-72 space-y-2 overflow-y-auto pe-1">
                     {filtered.length === 0 ? <NoResults /> : filtered.map((p) => {
-                      const active = student?.id === p.id;
+                      const active = selected.some((s) => s.id === p.id);
                       return (
                         <button
                           key={p.id}
-                          onClick={() => setStudent(active ? null : p)}
+                          onClick={() => toggleStudent(p)}
+
                           title={active ? "إلغاء الاختيار" : "اختيار التلميذ"}
                           className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-start transition-colors ${
                             active ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/50"
@@ -396,8 +503,9 @@ function AddRegistrationDialog({
                     })}
                   </div>
                   <p className="flex items-center gap-2 border-t border-border pt-3 text-xs text-muted-foreground">
-                    <Info className="h-3.5 w-3.5" /> يمكنك البحث بالاسم الكامل أو جزء منه أو رقم الهاتف أو رقم التلميذ.
+                    <Info className="h-3.5 w-3.5" /> يمكنك اختيار أكثر من تلميذ في نفس الوقت، والبحث بالاسم أو رقم الهاتف أو رقم التلميذ.
                   </p>
+
                 </>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -423,42 +531,51 @@ function AddRegistrationDialog({
             <div className="space-y-4 md:border-s md:border-border md:ps-5">
               {kind === "internal" && (
                 <div>
-                  <div className="text-sm font-bold">التلميذ المختار</div>
-                  {student ? (
-                    <div className="mt-2 flex items-center gap-3 rounded-2xl border border-border bg-secondary/40 p-4">
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                        <Users className="h-5 w-5" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 text-sm font-bold">
-                          <Check className="h-4 w-4 text-primary" /> {student.fullName}
-                        </div>
-                        <div className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
-                          {(student.memberId ?? student.username) && (
-                            <span className="flex items-center gap-1 font-mono"><IdCard className="h-3.5 w-3.5" />{student.memberId ?? student.username}</span>
-                          )}
-                          <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{student.phone || "—"}</span>
-                        </div>
-                        <span className="mt-1.5 inline-flex rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                          تابع للجمعية
-                        </span>
-                      </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-bold">التلاميذ المختارون ({selected.length})</div>
+                    {selected.length > 0 && (
                       <button
-                        onClick={() => setStudent(null)}
-                        title="إلغاء الاختيار"
-                        aria-label="إلغاء اختيار التلميذ"
-                        className="shrink-0 rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                        onClick={() => setSelected([])}
+                        className="rounded-lg border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary"
                       >
-                        <X className="h-4 w-4" />
+                        مسح الكل
                       </button>
+                    )}
+                  </div>
+                  {selected.length > 0 ? (
+                    <div className="mt-2 max-h-60 space-y-2 overflow-y-auto pe-1">
+                      {selected.map((s) => (
+                        <div key={s.id} className="flex items-center gap-3 rounded-2xl border border-border bg-secondary/40 p-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 truncate text-sm font-bold">
+                              <Check className="h-4 w-4 shrink-0 text-primary" /> {s.fullName}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                              {(s.memberId ?? s.username) && (
+                                <span className="flex items-center gap-1 font-mono"><IdCard className="h-3.5 w-3.5" />{s.memberId ?? s.username}</span>
+                              )}
+                              <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{s.phone || "—"}</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => toggleStudent(s)}
+                            title="إلغاء الاختيار"
+                            aria-label="إلغاء اختيار التلميذ"
+                            className="shrink-0 rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   ) : (
                     <div className="mt-2 rounded-2xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
-                      لم يتم اختيار تلميذ بعد.
+                      لم يتم اختيار أي تلميذ بعد.
                     </div>
                   )}
                 </div>
               )}
+
 
               <label className="block">
                 <span className="mb-1.5 block text-sm font-semibold">

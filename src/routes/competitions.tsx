@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Trophy, Medal, Award, Megaphone, Calendar, MapPin, Clock } from "lucide-react";
-import { useContentStore, hasResults } from "@/lib/content-store";
+import { useContentStore, hasResults, FIELD_LABEL, needsHizb } from "@/lib/content-store";
 import { PageHero } from "./courses";
 import { useLiveSearch } from "@/lib/use-live-search";
 import { SearchBox, NoResults } from "@/components/ui/search-box";
@@ -79,6 +79,12 @@ function CompetitionsPage() {
                     <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
                       {a.level}
                     </span>
+                    {a.field && (
+                      <span className="rounded-full bg-secondary px-3 py-1 text-xs font-bold text-foreground/80">
+                        {FIELD_LABEL[a.field]}
+                        {needsHizb(a.field) && a.hizbCount ? ` · ${a.hizbCount} أحزاب` : ""}
+                      </span>
+                    )}
                     <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                       <Calendar className="h-3.5 w-3.5" /> {a.date}
                     </span>

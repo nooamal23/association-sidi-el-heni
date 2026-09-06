@@ -7,8 +7,11 @@ import {
   competitionsActions,
   announcementsActions,
   hasResults,
+  FIELD_LABEL,
+  needsHizb,
   type Competition,
   type CompetitionAnnouncement,
+  type CompetitionField,
 } from "@/lib/content-store";
 import { confirmToast } from "@/lib/confirm-toast";
 import { ArabicDateInput } from "@/components/ui/arabic-date-input";
@@ -41,7 +44,7 @@ function CompetitionsAdmin() {
         </div>
       </header>
 
-      <div className="flex gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-soft">
+      <div className="grid grid-cols-1 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-soft sm:flex">
         <TabButton active={tab === "announcements"} onClick={() => setTab("announcements")} icon={<Megaphone className="h-4 w-4" />}>
           الإعلان عن مسابقات
         </TabButton>
@@ -84,7 +87,25 @@ const EMPTY_ANN: AnnForm = {
   location: "",
   description: "",
   imageUrl: "",
+  field: null,
+  hizbCount: null,
 };
+
+const INPUT_CLASS =
+  "block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/30";
+const SELECT_CLASS = INPUT_CLASS;
+
+/** A titled block of fields inside the announcement dialog. */
+function FormSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="rounded-2xl border border-border bg-background/40 p-4 sm:p-5">
+      <legend className="px-2 text-xs font-bold uppercase tracking-wide text-primary">
+        {title}
+      </legend>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">{children}</div>
+    </fieldset>
+  );
+}
 
 function AnnouncementsPanel() {
   const { announcements } = useContentStore();
@@ -92,6 +113,7 @@ function AnnouncementsPanel() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<CompetitionAnnouncement | null>(null);
   const [form, setForm] = useState<AnnForm>(EMPTY_ANN);
+  const [saving, setSaving] = useState(false);
 
   function openAdd() {
     setEditing(null);
@@ -105,21 +127,39 @@ function AnnouncementsPanel() {
     setOpen(true);
   }
 
-  function submit(e: React.FormEvent) {
+  // آخر أجل للتسجيل لا يمكن أن يكون بعد تاريخ المسابقة.
+  const deadlineError =
+    form.date && form.deadline && form.deadline > form.date
+      ? "آخر أجل للتسجيل يجب أن يكون قبل تاريخ المسابقة أو في نفس اليوم."
+      : "";
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (deadlineError) { toast.error(deadlineError); return; }
+    if (!form.field) { toast.error("اختر مجال المسابقة"); return; }
+    if (saving) return;
     const payload: AnnForm = {
       ...form,
+      title: form.title.trim(),
+      location: form.location.trim(),
+      description: form.description.trim(),
       imageUrl: form.imageUrl?.trim() || undefined,
       deadline: form.deadline?.trim() || undefined,
+      hizbCount: needsHizb(form.field) ? form.hizbCount ?? null : null,
     };
-    if (editing) {
-      announcementsActions.update(editing.id, payload);
-      toast.success("تم حفظ التغييرات");
-    } else {
-      announcementsActions.add(payload);
-      toast.success("تم نشر الإعلان");
+    setSaving(true);
+    try {
+      if (editing) {
+        await announcementsActions.update(editing.id, payload);
+        toast.success("تم حفظ التغييرات");
+      } else {
+        await announcementsActions.add(payload);
+        toast.success("تم نشر الإعلان");
+      }
+      setOpen(false);
+    } finally {
+      setSaving(false);
     }
-    setOpen(false);
   }
 
   function remove(a: CompetitionAnnouncement) {
@@ -182,6 +222,12 @@ function AnnouncementsPanel() {
                     <span className="flex items-center gap-1">
                       <MapPin className="h-3.5 w-3.5" /> {a.location}
                     </span>
+                    {a.field && (
+                      <span className="rounded-full bg-secondary px-2.5 py-0.5 font-semibold text-foreground/80">
+                        {FIELD_LABEL[a.field]}
+                        {needsHizb(a.field) && a.hizbCount ? ` · ${a.hizbCount} أحزاب` : ""}
+                      </span>
+                    )}
                     {a.deadline && (
                       <span className="border-s border-border ps-4">
                         آخر أجل للتسجيل: <span className="font-bold text-primary">{a.deadline}</span>
@@ -220,14 +266,15 @@ function AnnouncementsPanel() {
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-foreground/40 p-0 sm:items-center sm:p-4">
+          <div className="flex h-full max-h-none w-full max-w-2xl flex-col overflow-hidden border border-border bg-card shadow-elevated sm:h-auto sm:max-h-[90dvh] sm:rounded-3xl">
+            <div className="shrink-0 border-b border-border px-4 py-4 sm:px-7 sm:py-5">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Megaphone className="h-5 w-5" />
                 </span>
-                <h2 className="min-w-0 truncate font-display text-xl font-bold">
+                <h2 className="min-w-0 truncate font-display text-lg font-bold sm:text-xl">
                   {editing ? "تعديل الإعلان" : "إعلان مسابقة جديدة"}
                 </h2>
               </div>
@@ -245,92 +292,171 @@ function AnnouncementsPanel() {
                 ? "عدّل معلومات الإعلان ثم احفظ التغييرات."
                 : "أدخل معلومات المسابقة لنشر الإعلان في الصفحة العمومية."}
             </p>
+            </div>
 
-            <form onSubmit={submit} className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
-              <SimpleField className="sm:col-span-2" label="عنوان المسابقة" value={form.title} onChange={(v) => setForm({ ...form, title: v })} required />
-              <div className="min-w-0">
-                <label className="mb-1.5 block text-sm font-semibold">المستوى</label>
-                <select
-                  value={form.level}
-                  onChange={(e) => setForm({ ...form, level: e.target.value as CompetitionAnnouncement["level"] })}
-                  className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
-                >
-                  <option value="محلية">محلية</option>
-                  <option value="جهوية">جهوية</option>
-                  <option value="وطنية">وطنية</option>
-                </select>
-              </div>
-              <SimpleField label="المكان" value={form.location} onChange={(v) => setForm({ ...form, location: v })} required />
-              <div className="min-w-0">
-                <label className="mb-1.5 block text-sm font-semibold">
-                  تاريخ المسابقة <span className="text-destructive">*</span>
-                </label>
-                <ArabicDateInput value={form.date} required onChange={(v) => setForm({ ...form, date: v })} />
-              </div>
-              <div className="min-w-0">
-                <label className="mb-1.5 block text-sm font-semibold">آخر أجل للتسجيل (اختياري)</label>
-                <ArabicDateInput value={form.deadline ?? ""} onChange={(v) => setForm({ ...form, deadline: v })} />
-              </div>
-              <div className="min-w-0 sm:col-span-2">
-                <label className="mb-1.5 block text-sm font-semibold">
-                  وصف الإعلان <span className="text-destructive">*</span>
-                </label>
-                <textarea
-                  value={form.description}
+            <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5 sm:px-7">
+
+              {/* ---- بيانات المسابقة ---- */}
+              <FormSection title="بيانات المسابقة">
+                <SimpleField
+                  className="sm:col-span-2"
+                  label="عنوان المسابقة"
+                  value={form.title}
+                  onChange={(v) => setForm({ ...form, title: v })}
+                  placeholder="مثال: مسابقة في حفظ القرآن الكريم"
                   required
-                  rows={4}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
                 />
-              </div>
-              <div className="min-w-0 rounded-2xl border border-border bg-background/40 p-4 sm:col-span-2">
-                <label className="mb-3 block text-sm font-semibold">صورة الإعلان (اختياري)</label>
-                <div className="flex flex-wrap items-center gap-4">
-                  {form.imageUrl ? (
-                    <img src={form.imageUrl} alt="معاينة" className="h-24 w-32 shrink-0 rounded-xl object-cover ring-2 ring-primary/20" />
-                  ) : (
-                    <div className="flex h-24 w-32 shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-xs text-muted-foreground">
-                      <ImageIcon className="h-6 w-6" />
-                      <span>لا توجد صورة</span>
-                    </div>
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col gap-2">
-                    <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
-                      <Upload className="h-4 w-4" />
-                      <span>اختر صورة</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="sr-only"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (f) pickImage(f);
-                        }}
-                      />
+                <div className="min-w-0">
+                  <label className="mb-1.5 block text-sm font-semibold">
+                    مجال المسابقة <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    value={form.field ?? ""}
+                    required
+                    onChange={(e) => {
+                      const field = (e.target.value || null) as CompetitionField | null;
+                      setForm({ ...form, field, hizbCount: needsHizb(field) ? (form.hizbCount ?? 1) : null });
+                    }}
+                    className={SELECT_CLASS}
+                  >
+                    <option value="" disabled>اختر مجال المسابقة</option>
+                    {(Object.keys(FIELD_LABEL) as CompetitionField[]).map((f) => (
+                      <option key={f} value={f}>{FIELD_LABEL[f]}</option>
+                    ))}
+                  </select>
+                </div>
+                {needsHizb(form.field) && (
+                  <div className="min-w-0">
+                    <label className="mb-1.5 block text-sm font-semibold">
+                      عدد الأحزاب المقررة <span className="text-destructive">*</span>
                     </label>
-                    <div className="text-xs text-muted-foreground">
-                      {form.imageUrl ? "تم اختيار صورة" : "يُفضل صورة واضحة بخلفية مناسبة."}
-                    </div>
-                    {form.imageUrl && (
-                      <button
-                        type="button"
-                        onClick={() => setForm({ ...form, imageUrl: "" })}
-                        className="self-start rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-secondary"
-                      >
-                        إزالة الصورة
-                      </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      required
+                      value={form.hizbCount ?? ""}
+                      onChange={(e) => setForm({ ...form, hizbCount: e.target.value ? Number(e.target.value) : null })}
+                      placeholder="مثال: 2"
+                      className={INPUT_CLASS}
+                    />
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      يحدد نطاق الحفظ الذي سيُختبر فيه المشاركون.
+                    </p>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <label className="mb-1.5 block text-sm font-semibold">
+                    نطاق المسابقة <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    value={form.level}
+                    onChange={(e) => setForm({ ...form, level: e.target.value as CompetitionAnnouncement["level"] })}
+                    className={SELECT_CLASS}
+                  >
+                    <option value="محلية">محلية</option>
+                    <option value="جهوية">جهوية</option>
+                    <option value="وطنية">وطنية</option>
+                  </select>
+                </div>
+              </FormSection>
+
+              {/* ---- الموعد والمكان ---- */}
+              <FormSection title="الموعد والمكان">
+                <SimpleField
+                  className="sm:col-span-2"
+                  label="مكان إقامة المسابقة"
+                  value={form.location}
+                  onChange={(v) => setForm({ ...form, location: v })}
+                  placeholder="مثال: مقر الجمعية"
+                  required
+                />
+                <div className="min-w-0">
+                  <label className="mb-1.5 block text-sm font-semibold">
+                    تاريخ المسابقة <span className="text-destructive">*</span>
+                  </label>
+                  <ArabicDateInput value={form.date} required onChange={(v) => setForm({ ...form, date: v })} />
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-1.5 block text-sm font-semibold">
+                    آخر أجل للتسجيل <span className="text-destructive">*</span>
+                  </label>
+                  <ArabicDateInput value={form.deadline ?? ""} required onChange={(v) => setForm({ ...form, deadline: v })} />
+                  {deadlineError && (
+                    <p className="mt-1.5 text-xs font-semibold text-destructive">{deadlineError}</p>
+                  )}
+                </div>
+              </FormSection>
+
+              {/* ---- معلومات إضافية ---- */}
+              <FormSection title="معلومات إضافية">
+                <div className="min-w-0 sm:col-span-2">
+                  <label className="mb-1.5 block text-sm font-semibold">
+                    ملاحظات حول المسابقة{" "}
+                    <span className="font-normal text-muted-foreground">(اختياري)</span>
+                  </label>
+                  <textarea
+                    value={form.description}
+                    rows={4}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="أضف أي معلومات أو تعليمات مهمة للمشاركين..."
+                    className={INPUT_CLASS}
+                  />
+                </div>
+                <div className="min-w-0 rounded-2xl border border-border bg-background/40 p-4 sm:col-span-2">
+                  <label className="mb-3 block text-sm font-semibold">
+                    صورة الإعلان <span className="font-normal text-muted-foreground">(اختياري)</span>
+                  </label>
+                  <div className="flex flex-wrap items-center gap-4">
+                    {form.imageUrl ? (
+                      <img src={form.imageUrl} alt="معاينة" className="h-24 w-32 shrink-0 rounded-xl object-cover ring-2 ring-primary/20" />
+                    ) : (
+                      <div className="flex h-24 w-32 shrink-0 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border text-xs text-muted-foreground">
+                        <ImageIcon className="h-6 w-6" />
+                        <span>لا توجد صورة</span>
+                      </div>
                     )}
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
+                        <Upload className="h-4 w-4" />
+                        <span>اختر صورة</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) pickImage(f);
+                          }}
+                        />
+                      </label>
+                      <div className="text-xs text-muted-foreground">
+                        {form.imageUrl ? "تم اختيار صورة" : "يُفضل صورة واضحة بخلفية مناسبة."}
+                      </div>
+                      {form.imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setForm({ ...form, imageUrl: "" })}
+                          className="self-start rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-secondary"
+                        >
+                          إزالة الصورة
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
+              </FormSection>
               </div>
 
-              <div className="mt-1 flex flex-wrap gap-3 border-t border-border pt-4 sm:col-span-2">
+              <div className="shrink-0 flex flex-col gap-3 border-t border-border bg-card px-4 py-4 sm:flex-row sm:px-7">
                 <button
                   type="submit"
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90"
+                  disabled={saving}
+                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
                 >
                   <Save className="h-4 w-4" />
-                  {editing ? "حفظ التغييرات" : "نشر الإعلان"}
+                  {saving ? "جارٍ الحفظ..." : editing ? "حفظ التغييرات" : "نشر المسابقة"}
                 </button>
                 <button
                   type="button"
@@ -340,6 +466,7 @@ function AnnouncementsPanel() {
                   إلغاء
                 </button>
               </div>
+
             </form>
           </div>
         </div>
@@ -508,8 +635,9 @@ function ResultsPanel() {
       )}
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-y-auto bg-foreground/40 p-0 sm:items-center sm:p-4">
+          <div className="w-full max-w-2xl overflow-y-auto border border-border bg-card p-4 shadow-elevated sm:max-h-[90dvh] sm:rounded-3xl sm:p-7">
+
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -622,6 +750,7 @@ function SimpleField({
   required,
   className,
   type = "text",
+  placeholder,
 }: {
   label: string;
   value: string;
@@ -629,6 +758,7 @@ function SimpleField({
   required?: boolean;
   className?: string;
   type?: string;
+  placeholder?: string;
 }) {
   return (
     <div className={`min-w-0 ${className ?? ""}`}>
@@ -639,6 +769,7 @@ function SimpleField({
         type={type}
         value={value}
         required={required}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         className="block w-full rounded-xl border border-input bg-background px-3 py-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/30"
       />
