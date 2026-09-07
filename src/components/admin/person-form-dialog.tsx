@@ -223,14 +223,15 @@ export function PersonFormDialog({
 
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-foreground/40 px-3 py-4 sm:items-center sm:px-4 sm:py-8">
-      <div className="w-full max-w-2xl overflow-hidden rounded-3xl border border-border bg-card p-5 shadow-elevated sm:p-7">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-foreground/40 p-0 sm:items-center sm:p-4">
+      <div className="flex h-full max-h-none w-full max-w-2xl flex-col overflow-hidden border border-border bg-card shadow-elevated sm:h-auto sm:max-h-[90dvh] sm:rounded-3xl">
+        <div className="shrink-0 border-b border-border px-4 py-4 sm:px-7 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <UserPlus className="h-5 w-5" />
             </span>
-            <h2 className="min-w-0 truncate font-display text-xl font-bold">
+            <h2 className="min-w-0 truncate font-display text-lg font-bold sm:text-xl">
               {editing ? `تعديل ${singular}` : `إضافة ${singular} جديد`}
             </h2>
           </div>
@@ -242,14 +243,16 @@ export function PersonFormDialog({
           >
             <X className="h-5 w-5" />
           </button>
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {editing
+              ? `عدّل معلومات ال${singular} ثم احفظ التغييرات.`
+              : `أدخل معلومات ال${singular} لإضافته إلى النظام.`}
+          </p>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {editing
-            ? `عدّل معلومات ال${singular} ثم احفظ التغييرات.`
-            : `أدخل معلومات ال${singular} لإضافته إلى النظام.`}
-        </p>
 
-        <form onSubmit={submit} className="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 sm:grid-cols-2">
+        <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
+          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] gap-4 overflow-y-auto px-4 py-5 sm:grid-cols-2 sm:px-7">
           {(role === "student" || role === "instructor") && (
             <>
               <FrozenIdField value={frozenId} example={idExample} />
@@ -437,19 +440,21 @@ export function PersonFormDialog({
             </div>
           </div>
 
-          <div className="mt-1 flex flex-wrap gap-3 border-t border-border pt-4 sm:col-span-2">
+          </div>
+
+          <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-border bg-card px-4 py-3 sm:px-7 sm:py-4">
             <button
               type="submit"
               disabled={saving}
-              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
+              className="inline-flex min-w-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60"
             >
               <Save className="h-4 w-4" />
-              {editing ? "حفظ التغييرات" : `إضافة ال${singular}`}
+              <span className="truncate">{saving ? "جارٍ الحفظ..." : editing ? "حفظ التغييرات" : `إضافة ال${singular}`}</span>
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-border bg-background px-8 py-3 text-sm font-semibold text-foreground hover:bg-secondary"
+              className="shrink-0 rounded-xl border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground hover:bg-secondary sm:px-8"
             >
               إلغاء
             </button>
